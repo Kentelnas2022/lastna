@@ -129,20 +129,57 @@ export default function Education() {
 
     if (!result.isConfirmed) return;
 
-    await supabase.from("archived_education").insert([{ ...content, status: "Archived" }]);
-    await supabase.from("educational_contents").delete().eq("id", content.id);
+    // Remove id to avoid conflict in archived table
+    const { id, ...archivableContent } = content;
 
-    setArchived((prev) => [content, ...prev]);
+    const { error: insertError } = await supabase
+      .from("archived_education")
+      .insert([{ ...archivableContent, status: "Archived" }]);
+
+    if (insertError) {
+      Swal.fire("Failed to archive", insertError.message, "error");
+      return;
+    }
+
+    const { error: deleteError } = await supabase
+      .from("educational_contents")
+      .delete()
+      .eq("id", content.id);
+
+    if (deleteError) {
+      Swal.fire("Failed to remove original content", deleteError.message, "error");
+      return;
+    }
+
+    setArchived((prev) => [archivableContent, ...prev]);
     setContents((prev) => prev.filter((c) => c.id !== content.id));
 
     Swal.fire("Archived!", "The content has been archived.", "success");
   };
 
   const handleRestore = async (content) => {
-    await supabase.from("educational_contents").insert([{ ...content, status: "Published" }]);
-    await supabase.from("archived_education").delete().eq("id", content.id);
+    const { id, ...restoredContent } = content;
 
-    setContents((prev) => [content, ...prev]);
+    const { error: insertError } = await supabase
+      .from("educational_contents")
+      .insert([{ ...restoredContent, status: "Published" }]);
+
+    if (insertError) {
+      Swal.fire("Failed to restore", insertError.message, "error");
+      return;
+    }
+
+    const { error: deleteError } = await supabase
+      .from("archived_education")
+      .delete()
+      .eq("id", content.id);
+
+    if (deleteError) {
+      Swal.fire("Failed to delete archived", deleteError.message, "error");
+      return;
+    }
+
+    setContents((prev) => [restoredContent, ...prev]);
     setArchived((prev) => prev.filter((c) => c.id !== content.id));
 
     Swal.fire("Restored!", "The content has been restored.", "success");
@@ -324,6 +361,16 @@ export default function Education() {
                   <option value="Recycling">Recycling</option>
                   <option value="Composting">Composting</option>
                   <option value="Waste Reduction">Waste Reduction</option>
+                  <option value="Hazardous Waste">Hazardous Waste</option>
+                  <option value="Proper Disposal">Proper Disposal</option>
+                  <option value="Plastic Waste Management">Plastic Waste Management</option>
+                  <option value="E-Waste Management">E-Waste Management</option>
+                  <option value="Water Conservation">Water Conservation</option>
+                  <option value="Clean Community Practices">Clean Community Practices</option>
+                  <option value="Environmental Awareness">Environmental Awareness</option>
+                  <option value="Sustainable Living">Sustainable Living</option>
+                  <option value="Health and Safety">Health and Safety</option>
+                  <option value="Waste Collection Etiquette">Waste Collection Etiquette</option>
                 </select>
                 <textarea
                   placeholder="Description"

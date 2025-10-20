@@ -3,9 +3,7 @@
 import { useState, useEffect } from "react";
 import {
   CalendarDaysIcon,
-  MapPinIcon,
-  ClockIcon,
-  TrashIcon,
+  ArchiveBoxArrowDownIcon,
 } from "@heroicons/react/24/outline";
 import { supabase } from "@/supabaseClient";
 import {
@@ -17,7 +15,9 @@ import {
 } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import Swal from "sweetalert2";
 
+// Fix for default leaflet icon paths
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl:
@@ -26,6 +26,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
+// Component to pick route points on the map
 function RoutePicker({ points, setPoints }) {
   useMapEvents({
     click(e) {
@@ -39,66 +40,43 @@ function RoutePicker({ points, setPoints }) {
   return null;
 }
 
-const getTimeLabel = (createdAt) => {
-  if (!createdAt) return "";
-  const now = new Date();
-  const created = new Date(createdAt);
-  const diffMs = now - created;
-  const diffMin = Math.floor(diffMs / 60000);
-  const diffHr = Math.floor(diffMin / 60);
-  const diffDay = Math.floor(diffHr / 24);
-
-  if (diffMin < 5) return "New";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  if (diffHr < 24) return `${diffHr}h ago`;
-  return `${diffDay}d ago`;
-};
-
 export default function Schedule() {
   const [day, setDay] = useState("");
   const [date, setDate] = useState("");
   const [purok, setPurok] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
-  const [plan] = useState("A"); // ✅ Always Plan A
+  const [plan] = useState("A");
   const [wasteType, setWasteType] = useState("");
   const [status, setStatus] = useState("not-started");
   const [schedules, setSchedules] = useState([]);
+  const [archivedSchedules, setArchivedSchedules] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
   const [routePoints, setRoutePoints] = useState([]);
   const [statusFilter, setStatusFilter] = useState("all");
-  const [sortOrder, setSortOrder] = useState("recent"); // ✅ Default: recent first
 
-  // ✅ Fetch schedules newest first
+  // Fetch schedules from Supabase
   const fetchSchedules = async () => {
     const { data, error } = await supabase
       .from("schedules")
       .select("*")
       .order("created_at", { ascending: false });
+    if (!error) setSchedules(data || []);
+  };
 
-    if (error) {
-      console.error("Error fetching schedules:", error);
-    } else {
-      setSchedules(data || []);
-    }
+  // Fetch archived schedules
+  const fetchArchived = async () => {
+    const { data, error } = await supabase
+      .from("archived_schedules")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (!error) setArchivedSchedules(data || []);
   };
 
   useEffect(() => {
     fetchSchedules();
-    const channel = supabase
-      .channel("realtime:schedules")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "schedules" },
-        () => fetchSchedules()
-      )
-      .subscribe();
-
-    const interval = setInterval(() => fetchSchedules(), 60000);
-    return () => {
-      clearInterval(interval);
-      supabase.removeChannel(channel);
-    };
+    fetchArchived();
   }, []);
 
   const handleDateChange = (e) => {
@@ -119,14 +97,13 @@ export default function Schedule() {
     } else setDay("");
   };
 
-  // ✅ Modified: When new schedule is added, put it on top of the list
+  // Add new schedule
   const handleAddSchedule = async (e) => {
     e.preventDefault();
     const routeJson = JSON.stringify(routePoints || []);
-
     const schedulePayload = {
       purok,
-      plan: "A", // Always Plan A when official adds
+      plan: "A",
       day,
       date,
       start_time: startTime,
@@ -141,39 +118,106 @@ export default function Schedule() {
       .insert([schedulePayload])
       .select("*");
 
-    if (error) {
-      console.error("Error adding schedule:", error);
-      alert("Failed to add schedule");
-      return;
+    if (error) Swal.fire("Error", "Failed to add schedule", "error");
+    else {
+      setSchedules((prev) => [data[0], ...prev]);
+      Swal.fire("Success!", "New schedule has been added.", "success");
+      setIsModalOpen(false);
     }
-
-    if (data && data.length > 0) {
-      const newSchedule = data[0];
-      // ✅ Show the new schedule first
-      setSchedules((prev) => [newSchedule, ...prev]);
-
-      const actionMessage = `Added Plan A for Purok ${newSchedule.purok} on ${newSchedule.date}`;
-      const { error: activityError } = await supabase.from("activities").insert([
-        {
-          action: actionMessage,
-          type: "create",
-          schedule_id: newSchedule.schedule_id || newSchedule.id || null,
-        },
-      ]);
-      if (activityError) console.error("Error logging activity:", activityError);
-    }
-
-    setDay("");
-    setDate("");
-    setPurok("");
-    setStartTime("");
-    setEndTime("");
-    setWasteType("");
-    setStatus("not-started");
-    setRoutePoints([]);
-    setIsModalOpen(false);
   };
 
+  // Archive a schedule
+  const handleArchive = async (sched) => {
+    const confirm = await Swal.fire({
+      title: "Archive Schedule?",
+      text: "This will move the schedule to the archive list.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Yes, archive it",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#2563eb",
+    });
+    if (!confirm.isConfirmed) return;
+
+    const archivedItem = { ...sched, schedule_id: undefined };
+
+    const { error: insertError } = await supabase
+      .from("archived_schedules")
+      .insert([archivedItem]);
+
+    if (insertError)
+      return Swal.fire("Error", "Failed to archive schedule", "error");
+
+    const { error: deleteError } = await supabase
+      .from("schedules")
+      .delete()
+      .eq("schedule_id", sched.schedule_id);
+
+    if (deleteError)
+      return Swal.fire(
+        "Error",
+        "Failed to remove schedule from main table",
+        "error"
+      );
+
+    await fetchSchedules();
+    await fetchArchived();
+    Swal.fire("Archived!", "Schedule has been archived successfully.", "success");
+  };
+
+  // Restore archived schedule
+  const handleRestore = async (sched) => {
+    const confirm = await Swal.fire({
+      title: "Restore Schedule?",
+      text: "This will move it back to the active list.",
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Yes, restore it",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#16a34a",
+    });
+    if (!confirm.isConfirmed) return;
+
+    try {
+      const restoredItem = {
+        date: sched.date || null,
+        purok: sched.purok || null,
+        day: sched.day || null,
+        waste_type: sched.waste_type || null,
+        status: sched.status || "not-started",
+        start_time: sched.start_time || null,
+        end_time: sched.end_time || null,
+        plan: sched.plan || "A",
+        route_points: sched.route_points || null,
+        scheduled_start: null,
+        scheduled_end: null,
+        actual_end: null,
+      };
+
+      const { data: insertData, error: insertError } = await supabase
+        .from("schedules")
+        .insert([restoredItem])
+        .select("*");
+
+      if (insertError) throw insertError;
+
+      const { error: deleteError } = await supabase
+        .from("archived_schedules")
+        .delete()
+        .eq("schedule_id", sched.schedule_id);
+
+      if (deleteError) throw deleteError;
+
+      await fetchSchedules();
+      await fetchArchived();
+      Swal.fire("Restored!", "Schedule has been moved back successfully.", "success");
+    } catch (err) {
+      console.error("Restore failed:", err);
+      Swal.fire("Error", "Failed to restore schedule. Check console.", "error");
+    }
+  };
+
+  // Helpers to format date and time
   const formatDate = (dateStr, dayLabel) => {
     if (!dateStr) return "";
     const d = new Date(dateStr);
@@ -201,39 +245,11 @@ export default function Schedule() {
     completed: "bg-green-100 text-green-800",
   };
 
-  const dropdownColors = {
-    all: "bg-gray-100 text-gray-800 border-gray-300",
-    "not-started": "bg-red-100 text-red-700 border-red-300",
-    ongoing: "bg-yellow-100 text-yellow-700 border-yellow-300",
-    completed: "bg-green-100 text-green-700 border-green-300",
-  };
-
-  const statusLabel = (raw) => {
-    if (!raw) return "Not Started";
-    const s = String(raw).toLowerCase();
-    if (s.includes("completed")) return "Completed";
-    if (s.includes("ongoing")) return "Ongoing";
-    if (s.includes("not-start")) return "Not Started";
-    return raw.charAt(0).toUpperCase() + raw.slice(1);
-  };
-
-  const filteredSchedules = schedules
-    .filter((sched) => {
-      if (statusFilter === "all") return true;
-      return (sched.status || "").toLowerCase() === statusFilter;
-    })
-    .sort((a, b) => {
-      if (sortOrder === "recent") {
-        return new Date(b.created_at) - new Date(a.created_at);
-      } else {
-        return new Date(a.created_at) - new Date(b.created_at);
-      }
-    });
-
-  const newestId =
-    sortOrder === "recent"
-      ? filteredSchedules[0]?.id
-      : filteredSchedules[filteredSchedules.length - 1]?.id;
+  const filteredSchedules = schedules.filter((sched) =>
+    statusFilter === "all"
+      ? true
+      : (sched.status || "").toLowerCase() === statusFilter
+  );
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-10">
@@ -242,150 +258,80 @@ export default function Schedule() {
         Manage Garbage Collection Schedule
       </h2>
 
-      {/* Filters */}
-      <div className="flex flex-wrap justify-between items-center mb-6 gap-3">
-        <div className="flex gap-3">
-          <div className="relative">
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className={`appearance-none rounded-lg px-4 py-2 pr-10 shadow-sm focus:outline-none focus:ring-2 transition ${
-                dropdownColors[statusFilter] || "bg-gray-100 text-gray-800"
-              }`}
-            >
-              <option value="all">All</option>
-              <option value="not-started">Not Started</option>
-              <option value="ongoing">Ongoing</option>
-              <option value="completed">Completed</option>
-            </select>
-            <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
-              <svg
-                className="w-5 h-5 text-gray-500"
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M5.23 7.21a.75.75 0 011.06.02L10 10.939l3.71-3.71a.75.75 0 111.06 1.061l-4.24 4.25a.75.75 0 01-1.06 0L5.25 8.29a.75.75 0 01-.02-1.06z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </div>
-          </div>
-
-          {/* Sort dropdown */}
-          <div className="relative">
-            <select
-              value={sortOrder}
-              onChange={(e) => setSortOrder(e.target.value)}
-              className="appearance-none rounded-lg px-4 py-2 pr-10 shadow-sm focus:outline-none focus:ring-2 bg-gray-100 text-gray-800"
-            >
-              <option value="oldest">By Date (Oldest)</option>
-              <option value="recent">By Date (Recent)</option>
-            </select>
-            <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
-              <svg
-                className="w-5 h-5 text-gray-500"
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M5.23 7.21a.75.75 0 011.06.02L10 10.939l3.71-3.71a.75.75 0 111.06 1.061l-4.24 4.25a.75.75 0 01-1.06 0L5.25 8.29a.75.75 0 01-.02-1.06z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </div>
-          </div>
-        </div>
-
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-lg shadow-sm w-full sm:w-auto"
+      <div className="flex justify-between items-center mb-6">
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="rounded-lg px-4 py-2 bg-gray-100 text-gray-800"
         >
-          + Add Schedule
-        </button>
+          <option value="all">All</option>
+          <option value="not-started">Not Started</option>
+          <option value="ongoing">Ongoing</option>
+          <option value="completed">Completed</option>
+        </select>
+
+        <div className="flex gap-2">
+          <button
+            onClick={() => setIsArchiveModalOpen(true)}
+            className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg shadow-md transition-all"
+          >
+            View Archives
+          </button>
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-lg shadow-md hover:shadow-lg transition-all"
+          >
+            + Add Schedule
+          </button>
+        </div>
       </div>
 
-      {/* Table */}
       <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-200">
         <div className="overflow-x-auto w-full">
           <table className="min-w-full text-sm table-auto">
             <thead>
               <tr className="bg-gray-100 text-gray-700">
-                <th className="py-3 px-4 text-left whitespace-nowrap">Date</th>
-                <th className="py-3 px-4 text-left whitespace-nowrap">Purok</th>
-                <th className="py-3 px-4 text-left whitespace-nowrap">Time</th>
-                <th className="py-3 px-4 text-left whitespace-nowrap">Plan</th>
-                <th className="py-3 px-4 text-left whitespace-nowrap">
-                  Waste Type
-                </th>
-                <th className="py-3 px-4 text-left whitespace-nowrap">Status</th>
-                <th className="py-3 px-4 text-left whitespace-nowrap">Added</th>
+                <th className="py-3 px-4 text-left">Date</th>
+                <th className="py-3 px-4 text-left">Purok</th>
+                <th className="py-3 px-4 text-left">Time</th>
+                <th className="py-3 px-4 text-left">Plan</th>
+                <th className="py-3 px-4 text-left">Waste Type</th>
+                <th className="py-3 px-4 text-left">Status</th>
+                <th className="py-3 px-4 text-center">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
-              {filteredSchedules.length > 0 ? (
-                filteredSchedules.map((sched) => {
-                  const id =
-                    sched.schedule_id ??
-                    sched.id ??
-                    `${sched.date}-${sched.purok}`;
-                  const planValue = String(sched.plan || "").trim();
-                  const statusValue = String(
-                    sched.status || "not-started"
-                  ).trim();
-                  const badgeClass =
-                    statusColors[statusValue] ||
-                    "bg-gray-100 text-gray-700";
-                  const timeLabel = getTimeLabel(sched.created_at);
-
-                  return (
-                    <tr
-                      key={id}
-                      className={`hover:bg-gray-50 transition ${
-                        sched.id === newestId
-                          ? "animate-strong-pulse bg-green-100"
-                          : ""
+            <tbody>
+              {filteredSchedules.map((sched) => (
+                <tr key={sched.schedule_id} className="hover:bg-gray-50">
+                  <td className="py-3 px-4">{formatDate(sched.date, sched.day)}</td>
+                  <td className="py-3 px-4">Purok {sched.purok}</td>
+                  <td className="py-3 px-4">
+                    {formatTime(sched.start_time)} - {formatTime(sched.end_time)}
+                  </td>
+                  <td className="py-3 px-4">{sched.plan}</td>
+                  <td className="py-3 px-4">{sched.waste_type}</td>
+                  <td className="py-3 px-4">
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-medium ${
+                        statusColors[sched.status] || "bg-gray-100 text-gray-700"
                       }`}
                     >
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        {formatDate(sched.date, sched.day)}
-                      </td>
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        Purok {sched.purok}
-                      </td>
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        {formatTime(sched.start_time)} -{" "}
-                        {formatTime(sched.end_time)}
-                      </td>
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        {planValue}
-                      </td>
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        {sched.waste_type}
-                      </td>
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-medium ${badgeClass}`}
-                        >
-                          {statusLabel(statusValue)}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 whitespace-nowrap text-gray-500 text-xs">
-                        {timeLabel}
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
+                      {sched.status}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4 text-center">
+                    <button
+                      onClick={() => handleArchive(sched)}
+                      className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1 rounded transition-all duration-200 hover:scale-105"
+                    >
+                      Archive
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {filteredSchedules.length === 0 && (
                 <tr>
-                  <td
-                    colSpan={7}
-                    className="py-6 text-center text-gray-400 text-base"
-                  >
+                  <td colSpan={7} className="text-center py-5 text-gray-500 italic">
                     No schedules available
                   </td>
                 </tr>
@@ -395,11 +341,71 @@ export default function Schedule() {
         </div>
       </div>
 
-      {/* Modal */}
+      {/* Archive Modal */}
+      {isArchiveModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+              <ArchiveBoxArrowDownIcon className="w-6 h-6 text-gray-600" />
+              Archived Schedules
+            </h3>
+            <table className="min-w-full text-sm table-auto border">
+              <thead>
+                <tr className="bg-gray-100 text-gray-700">
+                  <th className="py-3 px-4 text-left">Date</th>
+                  <th className="py-3 px-4 text-left">Purok</th>
+                  <th className="py-3 px-4 text-left">Time</th>
+                  <th className="py-3 px-4 text-left">Plan</th>
+                  <th className="py-3 px-4 text-left">Waste Type</th>
+                  <th className="py-3 px-4 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {archivedSchedules.map((sched) => (
+                  <tr key={sched.schedule_id} className="hover:bg-gray-50">
+                    <td className="py-3 px-4">{formatDate(sched.date, sched.day)}</td>
+                    <td className="py-3 px-4">Purok {sched.purok}</td>
+                    <td className="py-3 px-4">
+                      {formatTime(sched.start_time)} - {formatTime(sched.end_time)}
+                    </td>
+                    <td className="py-3 px-4">{sched.plan}</td>
+                    <td className="py-3 px-4">{sched.waste_type}</td>
+                    <td className="py-3 px-4 text-center">
+                      <button
+                        onClick={() => handleRestore(sched)}
+                        className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded transition-all duration-200 hover:scale-105"
+                      >
+                        Restore
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {archivedSchedules.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="text-center py-5 text-gray-500 italic">
+                      No archived schedules
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            <div className="flex justify-end mt-4">
+              <button
+                onClick={() => setIsArchiveModalOpen(false)}
+                className="px-4 py-2 border rounded"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Schedule Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50 p-4">
-          <div className="bg-white rounded-lg shadow-lg max-w-lg w-full p-6 space-y-4 overflow-y-auto max-h-[90vh]">
-            <h3 className="text-lg font-semibold text-red-600">
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold text-red-600 mb-2">
               Add New Schedule (Plan A)
             </h3>
             <form onSubmit={handleAddSchedule} className="space-y-3">
@@ -434,18 +440,17 @@ export default function Schedule() {
                   type="time"
                   value={startTime}
                   onChange={(e) => setStartTime(e.target.value)}
-                  className="w-full sm:w-1/2 border p-2 rounded"
+                  className="w-full border p-2 rounded"
                   required
                 />
                 <input
                   type="time"
                   value={endTime}
                   onChange={(e) => setEndTime(e.target.value)}
-                  className="w-full sm:w-1/2 border p-2 rounded"
+                  className="w-full border p-2 rounded"
                   required
                 />
               </div>
-
               <select
                 value={wasteType}
                 onChange={(e) => setWasteType(e.target.value)}
@@ -453,43 +458,34 @@ export default function Schedule() {
                 required
               >
                 <option value="">Select Waste Type</option>
-                <option value="Recyclable Materials">
-                  ♻️ Recyclable Materials
-                </option>
-                <option value="Toxic Materials">☣️ Toxic Materials</option>
+                <option value="Recyclable Materials">♻️ Recyclable</option>
+                <option value="Toxic Materials">☣️ Toxic</option>
                 <option value="Non-Recyclable Materials">
-                  🗑️ Non-Recyclable Materials
+                  🗑️ Non-Recyclable
                 </option>
               </select>
 
-              <div>
-                <label className="block mb-1 text-sm">
-                  Pick Route (click start and end)
-                </label>
+              <div className="border rounded-lg overflow-hidden h-60">
                 <MapContainer
                   center={[8.228, 124.245]}
                   zoom={13}
-                  style={{ height: "250px", width: "100%" }}
+                  className="h-full w-full"
                 >
-                  <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                  <TileLayer
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    attribution="© OpenStreetMap"
+                  />
                   <RoutePicker points={routePoints} setPoints={setRoutePoints} />
-                  {routePoints.map((pos, idx) => (
-                    <Marker key={idx} position={pos} />
+                  {routePoints.map((pos, i) => (
+                    <Marker key={i} position={pos} />
                   ))}
                   {routePoints.length === 2 && (
-                    <Polyline positions={routePoints} color="blue" />
+                    <Polyline positions={routePoints} color="red" />
                   )}
                 </MapContainer>
-                <p className="text-xs text-gray-500 mt-2">
-                  {routePoints.length === 0
-                    ? "Click map to select start point"
-                    : routePoints.length === 1
-                    ? "Click again to select end point"
-                    : "Route selected"}
-                </p>
               </div>
 
-              <div className="flex justify-end gap-2 pt-3">
+              <div className="flex justify-end gap-2 mt-3">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
@@ -499,7 +495,7 @@ export default function Schedule() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
                 >
                   Save
                 </button>

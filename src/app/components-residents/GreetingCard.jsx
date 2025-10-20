@@ -44,12 +44,25 @@ export default function GreetingCard() {
   }, []);
 
   return (
-    <div className="bg-gradient-to-r from-dark-red to-medium-red text-white rounded-lg p-4 sm:p-5 shadow-md fade-in transition-all">
-      <h2 className="text-lg sm:text-xl md:text-2xl font-bold mb-1">
-        {greeting}, {userName}! 
+    <div
+      className="
+        bg-white
+        text-[#3b0a0a]
+        rounded-xl
+        p-5 sm:p-6
+        shadow-md
+        transition-all
+        duration-300
+        hover:shadow-lg
+        border border-gray-200
+      "
+    >
+      <h2 className="text-lg sm:text-xl md:text-2xl font-bold mb-1 text-[#8B0000]">
+        {greeting}, {userName}!
       </h2>
-      <p className="text-xs sm:text-sm text-red-100 leading-relaxed max-w-md">
-        Here’s your updated waste collection schedule. Stay organized and help keep Tambacan clean!
+      <p className="text-xs sm:text-sm text-gray-600 leading-relaxed max-w-md">
+        Here’s your updated waste collection schedule. Stay organized and help
+        keep Tambacan clean!
       </p>
     </div>
   );

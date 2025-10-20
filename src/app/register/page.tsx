@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/supabaseClient";
+import { UserPlus } from "lucide-react";
+import { motion } from "framer-motion";
 
 export default function Register() {
   const router = useRouter();
@@ -39,7 +41,7 @@ export default function Register() {
             purok: form.purok,
             mobile: form.mobile,
           },
-          emailRedirectTo: `${window.location.origin}/login`, // verification link
+          emailRedirectTo: `${window.location.origin}/login`,
         },
       });
 
@@ -71,11 +73,27 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
-      <div className="bg-white shadow-lg rounded-xl p-8 w-full max-w-md">
-        <h1 className="text-2xl font-bold text-center text-indigo-600 mb-6">
+    <div className="min-h-screen flex items-center justify-center bg-white text-gray-800 px-6 py-12">
+      <motion.div
+        initial={{ opacity: 0, y: 40 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6 }}
+        className="bg-white text-gray-800 rounded-2xl shadow-xl p-8 w-full max-w-md mx-auto"
+      >
+        {/* Icon */}
+        <div className="flex justify-center mb-6">
+          <UserPlus size={60} className="text-[#d94f4f]" />
+        </div>
+
+        {/* Header */}
+        <h1 className="text-3xl font-bold mb-2 text-center text-[#b33b3b]">
           Create an Account
         </h1>
+        <p className="text-sm text-gray-600 mb-6 text-center">
+          Register now to start managing your waste collection schedule.
+        </p>
+
+        {/* Form */}
         <form onSubmit={handleRegister} className="space-y-4">
           {/* Full Name */}
           <input
@@ -85,7 +103,7 @@ export default function Register() {
             value={form.name}
             onChange={handleChange}
             required
-            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            className="w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-[#d94f4f]/50 placeholder-gray-400"
           />
 
           {/* Purok Dropdown */}
@@ -94,7 +112,7 @@ export default function Register() {
             value={form.purok}
             onChange={handleChange}
             required
-            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            className="w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-[#d94f4f]/50 text-gray-700"
           >
             <option value="">Select Purok</option>
             {Array.from({ length: 11 }, (_, i) => (
@@ -112,7 +130,7 @@ export default function Register() {
             value={form.mobile}
             onChange={handleChange}
             required
-            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            className="w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-[#d94f4f]/50 placeholder-gray-400"
           />
 
           {/* Email */}
@@ -123,7 +141,7 @@ export default function Register() {
             value={form.email}
             onChange={handleChange}
             required
-            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            className="w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-[#d94f4f]/50 placeholder-gray-400"
           />
 
           {/* Password */}
@@ -134,29 +152,43 @@ export default function Register() {
             value={form.password}
             onChange={handleChange}
             required
-            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            className="w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-[#d94f4f]/50 placeholder-gray-400"
           />
 
-          {/* Error */}
-          {error && <p className="text-red-500 text-sm">{error}</p>}
+          {/* Error Message */}
+          {error && (
+            <p className="text-red-500 text-sm text-center">{error}</p>
+          )}
 
           {/* Submit Button */}
-          <button
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
             type="submit"
             disabled={loading}
-            className="w-full bg-indigo-600 text-white py-3 rounded-lg hover:bg-indigo-700 transition disabled:opacity-50"
+            className="w-full bg-[#d94f4f] text-white font-semibold py-3 rounded-xl shadow-lg hover:bg-[#e06060] transition disabled:opacity-50"
           >
             {loading ? "Registering..." : "Register"}
-          </button>
+          </motion.button>
         </form>
 
-        <p className="text-center text-sm text-gray-600 mt-4">
-          Already have an account?{" "}
-          <a href="/login" className="text-indigo-600 hover:underline">
-            Login here
-          </a>
-        </p>
-      </div>
+        {/* Login Link */}
+        <p className="text-center text-sm text-gray-600 mt-6">
+  Already have an account?{" "}
+  <a href="/login?skipOnboarding=true" className="text-[#d94f4f] hover:underline">
+    Login here
+  </a>
+</p>
+
+      </motion.div>
+
+      <style jsx>{`
+        @media (max-width: 640px) {
+          div {
+            padding: 1rem;
+          }
+        }
+      `}</style>
     </div>
   );
 }

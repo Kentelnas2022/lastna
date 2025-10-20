@@ -10,7 +10,10 @@
   "dependencies": {
     "@headlessui/react": "^2.2.7",
     "@heroicons/react": "^2.2.0",
-    "@supabase/supabase-js": "^2.57.2",
+    "@react-three/drei": "^10.7.6",
+    "@react-three/fiber": "^9.4.0",
+    "@supabase/auth-helpers-nextjs": "^0.10.0",
+    "@supabase/supabase-js": "^2.75.1",
     "chart.js": "^4.5.0",
     "framer-motion": "^12.23.12",
     "leaflet": "^1.9.4",
@@ -22,9 +25,10 @@
     "react-leaflet": "^5.0.0",
     "recharts": "^3.1.2",
     "sonner": "^2.0.7",
-    "sweetalert2": "^11.25.1",
+    "sweetalert2": "^11.26.3",
     "sweetalert2-react-content": "^5.1.0",
     "swiper": "^11.2.10",
+    "three": "^0.180.0",
     "twilio": "^5.10.3"
   },
   "devDependencies": {

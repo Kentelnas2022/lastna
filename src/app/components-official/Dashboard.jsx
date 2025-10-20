@@ -401,7 +401,7 @@ export default function Dashboard() {
         </div>
 
         {/* Efficiency Chart */}
-        <div className="glass-card rounded-xl sm:rounded-2xl shadow-2xl p-4 sm:p-6">
+        <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl p-4 sm:p-6">
           <h3 className="text-base sm:text-lg font-bold gradient-text mb-4">
             Collection Efficiency
           </h3>
@@ -434,7 +434,7 @@ export default function Dashboard() {
       {/* Residents per Purok and Compliance Rate in grid layout */}
 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-8">
   {/* Residents per Purok */}
-  <div className="bg-white rounded-2xl shadow-xl p-6 bg-gradient-to-r from-blue-50 to-indigo-100">
+  <div className="bg-white rounded-2xl shadow-xl p-6">
     <h3 className="text-lg font-semibold text-gray-800 mb-2 flex items-center gap-2">
       <span className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-100 text-blue-600 text-lg">
         📊
@@ -498,7 +498,7 @@ export default function Dashboard() {
   </div>
 
   {/* Compliance Rate */}
-  <div className="bg-white rounded-2xl shadow-xl p-6 bg-gradient-to-r from-green-50 to-teal-100">
+  <div className="bg-white rounded-2xl shadow-xl p-6">
     <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
       <span className="w-8 h-8 flex items-center justify-center rounded-full bg-green-100 text-green-600 text-lg">
         ✅
