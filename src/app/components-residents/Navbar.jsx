@@ -2,10 +2,18 @@
 
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/supabaseClient";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Swal from "sweetalert2";
+import {
+  Bell,
+  X,
+  Menu,
+  User,
+  LogOut,
+  LayoutDashboard,
+} from "lucide-react";
 
-export default function Navbar({ onOpenSchedule, onOpenReport,}) {
+export default function Navbar({ onOpenSchedule, onOpenReport }) {
   const [open, setOpen] = useState(false);
   const [activePage, setActivePage] = useState("");
   const [notifications, setNotifications] = useState([]);
@@ -13,9 +21,10 @@ export default function Navbar({ onOpenSchedule, onOpenReport,}) {
   const [userEmail, setUserEmail] = useState("");
   const [userAvatar, setUserAvatar] = useState("/default-avatar.png");
   const router = useRouter();
+  const pathname = usePathname();
   const channelRef = useRef(null);
 
-  // ✅ Fetch user + notifications once
+  // ✅ Fetch user and notifications
   useEffect(() => {
     const init = async () => {
       const { data, error } = await supabase.auth.getUser();
@@ -39,7 +48,7 @@ export default function Navbar({ onOpenSchedule, onOpenReport,}) {
 
       if (profile?.avatar_url) setUserAvatar(profile.avatar_url);
 
-      // Fetch and subscribe
+      // Fetch and subscribe to notifications
       await fetchNotifications(currentUser.id);
       subscribeToNotifications(currentUser.id);
     };
@@ -54,7 +63,16 @@ export default function Navbar({ onOpenSchedule, onOpenReport,}) {
     };
   }, []);
 
-  // ✅ Fetch all notifications
+  // ✅ Set active page indicator based on current path
+  useEffect(() => {
+    const currentPath = pathname || "";
+    if (currentPath.includes("/profile")) setActivePage("profile");
+    else setActivePage("dashboard");
+
+    localStorage.setItem("activePage", activePage);
+  }, [pathname]);
+
+  // ✅ Fetch notifications
   const fetchNotifications = async (uid) => {
     const { data, error } = await supabase
       .from("notifications")
@@ -66,7 +84,7 @@ export default function Navbar({ onOpenSchedule, onOpenReport,}) {
     else setNotifications(data || []);
   };
 
-  // ✅ Real-time subscription (INSERT, UPDATE, DELETE)
+  // ✅ Real-time notifications
   const subscribeToNotifications = (uid) => {
     if (channelRef.current) return;
 
@@ -116,7 +134,9 @@ export default function Navbar({ onOpenSchedule, onOpenReport,}) {
               break;
 
             case "DELETE":
-              setNotifications((prev) => prev.filter((n) => n.id !== oldNotif.id));
+              setNotifications((prev) =>
+                prev.filter((n) => n.id !== oldNotif.id)
+              );
               break;
           }
         }
@@ -124,7 +144,7 @@ export default function Navbar({ onOpenSchedule, onOpenReport,}) {
       .subscribe();
   };
 
-  // ✅ Mark all notifications as read
+  // ✅ Mark all as read
   const markAllAsRead = async () => {
     if (!notifications.length) {
       Swal.fire("No new notifications", "You're all caught up!", "info");
@@ -145,7 +165,7 @@ export default function Navbar({ onOpenSchedule, onOpenReport,}) {
     Swal.fire("Done!", "All notifications marked as read.", "success");
   };
 
-  // ✅ Clear all notifications (real-time delete)
+  // ✅ Clear all notifications
   const clearAllNotifications = async () => {
     if (!notifications.length) {
       Swal.fire("Nothing to clear", "", "info");
@@ -214,7 +234,7 @@ export default function Navbar({ onOpenSchedule, onOpenReport,}) {
     });
   };
 
-  // ✅ Real-time unread count
+  // ✅ Unread count
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   // ✅ Logout
@@ -228,9 +248,20 @@ export default function Navbar({ onOpenSchedule, onOpenReport,}) {
   const shortenEmail = (email) =>
     email.length > 20 ? email.slice(0, 17) + "..." : email;
 
+  // ✅ Menu items
   const menuItems = [
-    { key: "schedule", label: "Dashboard", onClick: onOpenSchedule },
-    { key: "report", label: "Report Issue", onClick: onOpenReport },
+    {
+      key: "dashboard",
+      label: "Dashboard",
+      icon: <LayoutDashboard className="w-5 h-5" />,
+      href: "/residents",
+    },
+    {
+      key: "profile",
+      label: "Profile",
+      icon: <User className="w-5 h-5" />,
+      href: "/profile",
+    },
   ];
 
   return (
@@ -244,16 +275,9 @@ export default function Navbar({ onOpenSchedule, onOpenReport,}) {
             {/* 🔔 Notifications */}
             <button
               onClick={showNotifications}
-              className="relative p-2 rounded-full hover:bg-[#a30000]"
+              className="relative p-2 rounded-full hover:bg-[#a30000] transition"
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-                />
-              </svg>
+              <Bell className="w-6 h-6" />
               {unreadCount > 0 && (
                 <span className="absolute -top-1 -right-1 bg-red-600 text-xs rounded-full h-5 w-5 flex items-center justify-center font-semibold">
                   {unreadCount}
@@ -261,11 +285,12 @@ export default function Navbar({ onOpenSchedule, onOpenReport,}) {
               )}
             </button>
 
-            {/* 🍔 Sidebar Menu Button */}
-            <button onClick={() => setOpen(true)} className="p-2 rounded-full hover:bg-[#a30000]">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
+            {/* 🍔 Sidebar Menu */}
+            <button
+              onClick={() => setOpen(true)}
+              className="p-2 rounded-full hover:bg-[#a30000] transition"
+            >
+              <Menu className="w-6 h-6" />
             </button>
           </div>
         </div>
@@ -278,58 +303,66 @@ export default function Navbar({ onOpenSchedule, onOpenReport,}) {
         }`}
       >
         <div
-          className={`fixed top-0 right-0 h-full w-72 bg-white shadow-2xl flex flex-col transform transition-transform duration-300 ${
+          className={`fixed top-0 right-0 h-full w-72 bg-gradient-to-b from-white to-gray-100 shadow-2xl flex flex-col transform transition-transform duration-300 ${
             open ? "translate-x-0" : "translate-x-full"
-          }`}
+          } rounded-l-2xl`}
         >
-          <div className="flex items-center justify-between p-4 border-b">
-            <h2 className="text-lg font-semibold text-[#8B0000]">Menu</h2>
-            <button onClick={() => setOpen(false)}>
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b bg-[#8B0000] text-white rounded-tl-2xl">
+            <h2 className="text-lg font-semibold">Menu</h2>
+            <button
+              onClick={() => setOpen(false)}
+              className="p-1 rounded-full hover:bg-[#a30000] transition"
+            >
+              <X className="w-5 h-5" />
             </button>
           </div>
 
-          {/* PROFILE */}
+          {/* Profile */}
           <div className="flex flex-col items-center py-6 border-b">
-            <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-[#8B0000] mb-3">
-              <img src={userAvatar} alt="Avatar" className="w-full h-full object-cover" />
+            <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-[#8B0000] shadow-md mb-3">
+              <img
+                src={userAvatar}
+                alt="Avatar"
+                className="w-full h-full object-cover"
+              />
             </div>
-            <p className="text-base font-semibold">{shortenEmail(userEmail)}</p>
-            <a href="/profile" className="text-sm text-[#8B0000] mt-1 hover:underline">
-              View Profile
-            </a>
+            <p className="text-base font-semibold text-gray-800">
+              {shortenEmail(userEmail)}
+            </p>
           </div>
 
-          {/* MENU ITEMS */}
+          {/* Menu Items */}
           <div className="flex-1 flex flex-col justify-between">
-            <div className="py-3">
+            <div className="py-4 space-y-1">
               {menuItems.map((item) => (
                 <button
                   key={item.key}
                   onClick={() => {
-                    item.onClick?.();
+                    router.push(item.href);
                     setActivePage(item.key);
+                    localStorage.setItem("activePage", item.key);
                     setOpen(false);
                   }}
-                  className={`block w-full text-left px-6 py-3 font-medium ${
+                  className={`flex items-center gap-3 w-full text-left px-6 py-3 font-medium rounded-lg transition-all ${
                     activePage === item.key
-                      ? "bg-[#8B0000] text-white"
-                      : "text-black hover:bg-[#8B0000]/10"
+                      ? "bg-[#8B0000] text-white shadow-md"
+                      : "text-gray-800 hover:bg-[#8B0000]/10"
                   }`}
                 >
-                  {item.label}
+                  {item.icon}
+                  <span>{item.label}</span>
                 </button>
               ))}
             </div>
 
-            {/* LOGOUT */}
+            {/* Logout */}
             <div className="border-t p-4">
               <button
                 onClick={handleLogout}
-                className="w-full bg-[#8B0000] text-white py-2 rounded-lg font-medium hover:bg-[#a30000]"
+                className="flex items-center justify-center gap-2 w-full bg-[#8B0000] text-white py-2 rounded-lg font-medium hover:bg-[#a30000] transition"
               >
+                <LogOut className="w-5 h-5" />
                 Logout
               </button>
             </div>

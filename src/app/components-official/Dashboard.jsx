@@ -120,50 +120,42 @@ export default function Dashboard() {
     ]);
   }, []);
 
-  // ✅ Active Routes based on schedule & route_points
-  useEffect(() => {
-    const fetchActiveRoutes = async () => {
-      const { data, error } = await supabase
-        .from("schedules")
-        .select("status, route_points, start_time, end_time, date");
+  // ✅ Active Routes (only ongoing)
+useEffect(() => {
+  const fetchActiveRoutes = async () => {
+    const { data, error } = await supabase
+      .from("schedules")
+      .select("status")
+      .eq("status", "ongoing");
 
-      if (error) {
-        console.error("Error fetching active routes:", error);
-        return;
+    if (error) {
+      console.error("Error fetching active routes:", error);
+      return;
+    }
+
+    setActiveRoutes((data || []).length);
+  };
+
+  fetchActiveRoutes();
+
+  // 🛰 Real-time listener for ongoing routes
+  const channel = supabase
+    .channel("realtime-active-routes")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "schedules" },
+      (payload) => {
+        const newStatus = payload.new?.status?.toLowerCase();
+        // Only refetch if a route becomes ongoing or stops being ongoing
+        if (["ongoing", "completed", "pending"].includes(newStatus)) {
+          fetchActiveRoutes();
+        }
       }
+    )
+    .subscribe();
 
-      const now = new Date();
-      const todayStr = now.toISOString().split("T")[0];
-
-      // ✅ Consider routes active if ongoing OR current time is within schedule today
-      const activeRoutesList = (data || []).filter((sched) => {
-        if (!sched.route_points) return false;
-        const points = JSON.parse(sched.route_points || "[]");
-        if (points.length === 0) return false;
-
-        const start = new Date(`${sched.date}T${sched.start_time}`);
-        const end = new Date(`${sched.date}T${sched.end_time}`);
-        const isOngoing = sched.status?.toLowerCase() === "ongoing";
-        const isNowActive = sched.date === todayStr && now >= start && now <= end;
-        return isOngoing || isNowActive;
-      });
-
-      setActiveRoutes(activeRoutesList.length);
-    };
-
-    fetchActiveRoutes();
-
-    const channel = supabase
-      .channel("realtime-active-routes")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "schedules" },
-        () => fetchActiveRoutes()
-      )
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
-  }, []);
+  return () => supabase.removeChannel(channel);
+}, []);
 
   // ✅ Completed Schedules
   useEffect(() => {
@@ -174,22 +166,57 @@ export default function Dashboard() {
     fetchCompleted();
   }, []);
 
-  // 🕒 Recent Activities
-  useEffect(() => {
-    const fetchActivities = async () => {
-      const { data } = await supabase
-        .from("activities")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(20);
-      const now = new Date();
-      const filtered = (data || []).filter(
-        (a) => now - new Date(a.created_at) < 24 * 60 * 60 * 1000
-      );
-      setActivities(filtered);
-    };
-    fetchActivities();
-  }, []);
+ // 🕒 Recent Activities (dynamic from schedules)
+useEffect(() => {
+  const fetchActivities = async () => {
+    const { data, error } = await supabase
+      .from("schedules")
+      .select("schedule_id, status, date, start_time, end_time, purok, updated_at")
+      .order("updated_at", { ascending: false })
+      .limit(20);
+
+    if (error) {
+      console.error("Error fetching schedules:", error);
+      return;
+    }
+
+    // ✅ Only show relevant recent activities
+    const filtered = (data || [])
+      .filter((s) => ["ongoing", "completed"].includes(s.status?.toLowerCase()))
+      .map((s) => ({
+        id: s.schedule_id,
+        type: s.status.toLowerCase() === "completed" ? "complete" : "update",
+        action:
+          s.status.toLowerCase() === "completed"
+            ? `The Collector has completed collection in Purok ${s.purok || "Unknown"}`
+            : `The Collector is now ongoing in Purok ${s.purok || "Unknown"}`,
+        created_at:
+          s.updated_at ||
+          (s.date ? new Date(s.date).toISOString() : new Date().toISOString()),
+      }));
+
+    setActivities(filtered);
+  };
+
+  fetchActivities();
+
+  // 🔁 Real-time listener for schedule updates
+  const channel = supabase
+    .channel("realtime-schedules")
+    .on(
+      "postgres_changes",
+      { event: "UPDATE", schema: "public", table: "schedules" },
+      (payload) => {
+        const newStatus = payload.new.status?.toLowerCase();
+        if (["ongoing", "completed"].includes(newStatus)) {
+          fetchActivities(); // Refresh when the status changes
+        }
+      }
+    )
+    .subscribe();
+
+  return () => supabase.removeChannel(channel);
+}, []);
 
   // ✅ Pending Reports
   useEffect(() => {
@@ -400,41 +427,42 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Efficiency Chart */}
-        <div className="glass-card rounded-xl sm:rounded-2xl shadow-2xl p-4 sm:p-6">
-          <h3 className="text-base sm:text-lg font-bold gradient-text mb-4">
-            Collection Efficiency
-          </h3>
-          <div className="h-60 sm:h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={efficiencyData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis dataKey="day" stroke="#6b7280" />
-                <YAxis stroke="#6b7280" />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "white",
-                    border: "1px solid #e5e7eb",
-                    borderRadius: "0.5rem",
-                  }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="efficiency"
-                  stroke="#6366f1"
-                  strokeWidth={3}
-                  dot={{ r: 5, fill: "#6366f1" }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+       {/* Efficiency Chart */}
+<div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl p-4 sm:p-6">
+  <h3 className="text-base sm:text-lg font-bold gradient-text mb-4">
+    Collection Efficiency
+  </h3>
+  <div className="h-60 sm:h-72">
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart data={efficiencyData}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+        <XAxis dataKey="day" stroke="#6b7280" />
+        <YAxis stroke="#6b7280" />
+        <Tooltip
+          contentStyle={{
+            backgroundColor: "white",
+            border: "1px solid #e5e7eb",
+            borderRadius: "0.5rem",
+          }}
+        />
+        <Line
+          type="monotone"
+          dataKey="efficiency"
+          stroke="#6366f1"
+          strokeWidth={3}
+          dot={{ r: 5, fill: "#6366f1" }}
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  </div>
+</div>
+
       </div>
 
       {/* Residents per Purok and Compliance Rate in grid layout */}
 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-8">
   {/* Residents per Purok */}
-  <div className="bg-white rounded-2xl shadow-xl p-6 bg-gradient-to-r from-blue-50 to-indigo-100">
+  <div className="bg-white rounded-2xl shadow-xl p-6 ">
     <h3 className="text-lg font-semibold text-gray-800 mb-2 flex items-center gap-2">
       <span className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-100 text-blue-600 text-lg">
         📊
@@ -498,7 +526,7 @@ export default function Dashboard() {
   </div>
 
   {/* Compliance Rate */}
-  <div className="bg-white rounded-2xl shadow-xl p-6 bg-gradient-to-r from-green-50 to-teal-100">
+  <div className="bg-white rounded-2xl shadow-xl p-6 ">
     <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
       <span className="w-8 h-8 flex items-center justify-center rounded-full bg-green-100 text-green-600 text-lg">
         ✅

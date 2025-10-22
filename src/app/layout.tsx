@@ -2,8 +2,7 @@ import "./globals.css";
 import { ReactNode } from "react";
 
 export const metadata = {
-  title: "Residents Dashboard",
-  description: "UI for residents management",
+  title: "Tambacan Waste App",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

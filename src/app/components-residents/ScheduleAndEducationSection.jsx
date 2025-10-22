@@ -3,7 +3,14 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "@/supabaseClient";
 import { motion } from "framer-motion";
-import { Recycle, Leaf, Target, AlertTriangle, BookOpen } from "lucide-react";
+import {
+  Recycle,
+  Leaf,
+  Target,
+  AlertTriangle,
+  BookOpen,
+} from "lucide-react";
+import ReportModal from "./ReportModal";
 
 export default function ScheduleAndEducationSection() {
   const [ongoing, setOngoing] = useState([]);
@@ -13,6 +20,9 @@ export default function ScheduleAndEducationSection() {
   const [loadingEdu, setLoadingEdu] = useState(true);
   const [errorEdu, setErrorEdu] = useState(null);
   const [selectedItem, setSelectedItem] = useState(null);
+
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [isEduModalOpen, setIsEduModalOpen] = useState(false);
 
   const formatTime = (timeStr) => {
     if (!timeStr) return "";
@@ -61,47 +71,29 @@ export default function ScheduleAndEducationSection() {
     }
   };
 
-  // 🧠 Updated scheduling logic
   const updateSchedules = (data) => {
     const now = new Date();
-    const today = getToday();
-
-    // Get ongoing schedules (today + current time within range)
     const ongoingSchedules = data.filter((s) => {
       const start = new Date(`${s.date}T${s.start_time}`);
       const end = new Date(`${s.date}T${s.end_time}`);
       return now >= start && now <= end;
     });
-
-    // Get future schedules (after current time)
-    const futureSchedules = data.filter((s) => {
-      const start = new Date(`${s.date}T${s.start_time}`);
-      return start > now;
-    });
-
-    // Always keep only 2 visible upcoming schedules
-    const visibleUpcoming = futureSchedules.slice(0, 2);
-
+    const futureSchedules = data
+      .filter((s) => new Date(`${s.date}T${s.start_time}`) > now)
+      .slice(0, 2);
     setOngoing(ongoingSchedules);
-    setUpcoming(visibleUpcoming);
+    setUpcoming(futureSchedules);
   };
 
   const fetchSchedules = async (purok) => {
     const normalizedPurok = normalizePurok(purok);
-
     const { data, error } = await supabase
       .from("schedules")
       .select("*")
       .ilike("purok", `%${normalizedPurok}%`)
       .order("date", { ascending: true })
       .order("start_time", { ascending: true });
-
-    if (error) {
-      console.error("Error fetching schedules:", error);
-      return;
-    }
-
-    if (data) updateSchedules(data);
+    if (!error && data) updateSchedules(data);
   };
 
   const fetchEducation = async () => {
@@ -111,19 +103,15 @@ export default function ScheduleAndEducationSection() {
         .from("educational_contents")
         .select("*")
         .order("created_at", { ascending: false });
-
       if (error) throw error;
-      const limitedData = data.slice(0, 4);
-      setItems(limitedData || []);
+      setItems(data.slice(0, 4) || []);
     } catch (err) {
-      console.error("fetch educational contents error:", err);
       setErrorEdu(err.message || String(err));
     } finally {
       setLoadingEdu(false);
     }
   };
 
-  // 🕓 Auto-update logic (real-time + timer)
   useEffect(() => {
     fetchResidentPurok();
     fetchEducation();
@@ -132,8 +120,6 @@ export default function ScheduleAndEducationSection() {
   useEffect(() => {
     if (residentPurok) {
       fetchSchedules(residentPurok);
-
-      // Realtime updates for schedule & education
       const scheduleChannel = supabase
         .channel("schedule-changes")
         .on(
@@ -152,7 +138,6 @@ export default function ScheduleAndEducationSection() {
         )
         .subscribe();
 
-      // ⏱️ Auto refresh every 30 seconds (re-evaluate schedule time progression)
       const interval = setInterval(() => {
         fetchSchedules(residentPurok);
       }, 30000);
@@ -190,14 +175,12 @@ export default function ScheduleAndEducationSection() {
 
   return (
     <div className="space-y-10 text-black">
-      {/* 🗓️ Collection Schedule Container */}
+      {/* 🗓️ Collection Schedule */}
       <div>
         <h2 className="text-xl font-semibold text-black mb-5 flex items-center gap-2">
           Collection Schedule
         </h2>
-
         <div className="space-y-4">
-          {/* ✅ Present / Ongoing */}
           {ongoing.length > 0 ? (
             ongoing.map((sched) => (
               <div
@@ -219,12 +202,9 @@ export default function ScheduleAndEducationSection() {
               </div>
             ))
           ) : (
-            <p className="text-gray-500 text-xs">
-              No ongoing collections today.
-            </p>
+            <p className="text-gray-500 text-xs">No ongoing collections today.</p>
           )}
 
-          {/* 🔜 Upcoming (2 visible only) */}
           {upcoming.length > 0 &&
             upcoming.map((sched) => (
               <div
@@ -248,48 +228,94 @@ export default function ScheduleAndEducationSection() {
         </div>
       </div>
 
-      {/* 📘 Learn & Tips Container */}
-      <div>
-        <h2 className="text-xl font-semibold text-black mb-4 flex items-center gap-2">
-          Learn & Tips
+      {/* ⚡ Quick Actions (Smaller Modern Cards) */}
+      <div className="mt-8 mb-4">
+        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-3 flex items-center gap-2">
+          Quick Actions
         </h2>
 
-        {loadingEdu && (
-          <p className="text-gray-700 text-sm">Loading educational content...</p>
-        )}
-        {errorEdu && <p className="text-red-500 text-sm">{errorEdu}</p>}
-
-        {items.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {items.map((item) => {
-              const IconComponent = getCategoryIcon(item.category);
-              return (
-                <motion.div
-                  key={item.id}
-                  onClick={() => setSelectedItem(item)}
-                  whileHover={{ scale: 1.03 }}
-                  transition={{ type: "spring", stiffness: 200 }}
-                  className="bg-white p-5 rounded-2xl shadow-sm hover:shadow-md cursor-pointer text-center border border-gray-200"
-                >
-                  <div className="flex justify-center mb-2">
-                    <div className="p-3 rounded-full bg-gray-100 text-gray-800 shadow-sm">
-                      <IconComponent className="w-6 h-6" />
-                    </div>
-                  </div>
-                  <h3 className="text-sm font-medium text-black mb-1 line-clamp-1">
-                    {item.title}
-                  </h3>
-                  <p className="text-xs text-gray-700 line-clamp-2 leading-snug">
-                    {item.description || "No description provided."}
-                  </p>
-                </motion.div>
-              );
-            })}
+        <div className="grid grid-cols-2 gap-3">
+          {/* 🧾 Report */}
+          <div
+            onClick={() => setIsReportModalOpen(true)}
+            className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col items-center justify-center text-center shadow-sm hover:shadow-md active:scale-95 transition-all cursor-pointer"
+          >
+            <AlertTriangle className="w-6 h-6 text-red-500 mb-2" />
+            <h3 className="text-sm font-medium text-gray-800">Report</h3>
+            <p className="text-[11px] text-gray-500 mt-0.5">
+              Submit an issue
+            </p>
           </div>
-        )}
+
+          {/* 📘 Learn & Tips */}
+          <div
+            onClick={() => setIsEduModalOpen(true)}
+            className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col items-center justify-center text-center shadow-sm hover:shadow-md active:scale-95 transition-all cursor-pointer"
+          >
+            <BookOpen className="w-6 h-6 text-green-600 mb-2" />
+            <h3 className="text-sm font-medium text-gray-800">Learn & Tips</h3>
+            <p className="text-[11px] text-gray-500 mt-0.5">
+              Educational content
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* 📺 Modal */}
+      {/* 📘 Educational Modal */}
+      {isEduModalOpen && (
+        <div className="fixed inset-0 bg-white/30 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.2 }}
+            className="bg-white rounded-xl shadow-lg w-full max-w-md max-h-[85vh] overflow-y-auto p-5 relative"
+          >
+            <button
+              onClick={() => setIsEduModalOpen(false)}
+              className="absolute top-2 right-2 text-gray-500 hover:text-black"
+            >
+              ✖
+            </button>
+            <h3 className="text-lg font-semibold text-black mb-4">
+              Learn & Tips
+            </h3>
+            {loadingEdu && (
+              <p className="text-gray-700 text-sm">
+                Loading educational content...
+              </p>
+            )}
+            {errorEdu && <p className="text-red-500 text-sm">{errorEdu}</p>}
+            <div className="grid grid-cols-2 gap-4">
+              {items.map((item) => {
+                const Icon = getCategoryIcon(item.category);
+                return (
+                  <motion.div
+                    key={item.id}
+                    onClick={() => setSelectedItem(item)}
+                    whileHover={{ scale: 1.03 }}
+                    transition={{ type: "spring", stiffness: 200 }}
+                    className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm text-center cursor-pointer"
+                  >
+                    <div className="flex justify-center mb-2">
+                      <div className="p-3 rounded-full bg-gray-100">
+                        <Icon className="w-5 h-5 text-gray-700" />
+                      </div>
+                    </div>
+                    <h3 className="text-sm font-medium text-black mb-1 line-clamp-1">
+                      {item.title}
+                    </h3>
+                    <p className="text-xs text-gray-600 line-clamp-2">
+                      {item.description}
+                    </p>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* 📘 Item Detail Modal */}
       {selectedItem && (
         <div className="fixed inset-0 backdrop-blur-md bg-transparent flex items-center justify-center z-50 p-4">
           <motion.div
@@ -325,6 +351,12 @@ export default function ScheduleAndEducationSection() {
           </motion.div>
         </div>
       )}
+
+      {/* 🧾 Report Modal */}
+      <ReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+      />
     </div>
   );
 }

@@ -128,42 +128,72 @@ export default function Schedule() {
 
   // Archive a schedule
   const handleArchive = async (sched) => {
-    const confirm = await Swal.fire({
-      title: "Archive Schedule?",
-      text: "This will move the schedule to the archive list.",
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonText: "Yes, archive it",
-      cancelButtonText: "Cancel",
-      confirmButtonColor: "#2563eb",
-    });
-    if (!confirm.isConfirmed) return;
+  const confirm = await Swal.fire({
+    title: "Archive Schedule?",
+    text: "This will move the schedule to the archive list.",
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonText: "Yes, archive it",
+    cancelButtonText: "Cancel",
+    confirmButtonColor: "#2563eb",
+  });
+  if (!confirm.isConfirmed) return;
 
-    const archivedItem = { ...sched, schedule_id: undefined };
+  // Ensure that required fields exist before archiving
+  if (!sched.schedule_id || !sched.date || !sched.purok || !sched.day) {
+    return Swal.fire("Error", "Missing required schedule information.", "error");
+  }
 
+  // Create an archived schedule object without the schedule_id
+  const archivedItem = {
+    schedule_id: sched.schedule_id, // Keep the reference to the original schedule
+    date: sched.date || null,
+    purok: sched.purok || null,
+    day: sched.day || null,
+    waste_type: sched.waste_type || null,
+    status: sched.status || "not-started", // Default to "not-started" if empty
+    start_time: sched.start_time || null,
+    end_time: sched.end_time || null,
+    plan: sched.plan || "A", // Default to "A" if empty
+    route_points: sched.route_points || "[]", // Ensure JSONB field is correctly formatted
+    scheduled_start: null,
+    scheduled_end: null,
+    actual_end: null,
+    created_at: new Date().toISOString(), // Using the current date for creation
+  };
+
+  try {
+    // Insert the schedule into archived_schedules
     const { error: insertError } = await supabase
       .from("archived_schedules")
       .insert([archivedItem]);
 
-    if (insertError)
+    if (insertError) {
+      console.error("Insert Error:", insertError.message);
       return Swal.fire("Error", "Failed to archive schedule", "error");
+    }
 
+    // Delete the schedule from the original schedules table
     const { error: deleteError } = await supabase
       .from("schedules")
       .delete()
       .eq("schedule_id", sched.schedule_id);
 
-    if (deleteError)
-      return Swal.fire(
-        "Error",
-        "Failed to remove schedule from main table",
-        "error"
-      );
+    if (deleteError) {
+      console.error("Delete Error:", deleteError.message);
+      return Swal.fire("Error", "Failed to remove schedule from main table", "error");
+    }
 
+    // Fetch updated schedules and archived schedules after the operation
     await fetchSchedules();
     await fetchArchived();
+
     Swal.fire("Archived!", "Schedule has been archived successfully.", "success");
-  };
+  } catch (err) {
+    console.error("Error during archive operation:", err);
+    Swal.fire("Error", "Something went wrong during archiving. Please check console.", "error");
+  }
+};
 
   // Restore archived schedule
   const handleRestore = async (sched) => {
