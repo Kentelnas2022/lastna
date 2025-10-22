@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter, useSearchParams } from "next/navigation";
+import Image from "next/image"; // ✅ Correct import
 import { supabase } from "@/supabaseClient";
 import {
   CalendarDays,
@@ -17,28 +18,23 @@ import {
 // 🌀 Onboarding content for Residents
 const onboardingScreens = [
   {
-    icon: <CalendarDays size={80} className="text-[#d94f4f] drop-shadow-md" />,
-    title: "Know Your Schedule",
-    subtitle: "Easily check your barangay’s waste collection schedule.",
+    image: "/img/welcome.png",
+    title: "Welcome to Waste App",
+    subtitle: "Track, manage, and reduce waste the smart way.",
   },
   {
-    icon: <Recycle size={80} className="text-[#d94f4f] drop-shadow-md" />,
-    title: "Segregate Properly",
-    subtitle:
-      "Learn how to separate biodegradable and non-biodegradable waste.",
+    image: "/img/recycle.png",
+    title: "Recycle with Ease",
+    subtitle: "Sort your waste properly and make an impact today.",
   },
   {
-    icon: <Bell size={80} className="text-[#d94f4f] drop-shadow-md" />,
-    title: "Get Collection Reminders",
-    subtitle: "Receive timely notifications before the collection day.",
-  },
-  {
-    icon: <Leaf size={80} className="text-[#d94f4f] drop-shadow-md" />,
-    title: "Keep Tambacan Clean",
-    subtitle:
-      "Join the community in maintaining a cleaner, greener barangay.",
+    image: "/img/community.png",
+    title: "Join the Community",
+    subtitle: "Work together for a cleaner tomorrow.",
   },
 ];
+
+
 
 export default function Login() {
   const router = useRouter();
@@ -97,7 +93,6 @@ export default function Login() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-
     const { error, data } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -182,7 +177,7 @@ export default function Login() {
           </motion.div>
 
           <motion.img
-            src="/earths.png"
+            src="/img/segs.png"
             alt="Official Waste Management"
             initial={{ opacity: 0, x: 50 }}
             animate={{ opacity: 1, x: 0 }}
@@ -257,7 +252,9 @@ export default function Login() {
 
         {/* ☎️ Contact Us Section */}
         <section className="bg-[#f9f9f9] py-16 px-12 text-center border-t">
-          <h3 className="text-3xl font-bold text-[#b33b3b] mb-4">Contact Us</h3>
+          <h3 className="text-3xl font-bold text-[#b33b3b] mb-4">
+            Contact Us
+          </h3>
           <p className="text-gray-700 mb-2">
             Barangay Tambacan WasteSmart Office
           </p>
@@ -299,182 +296,210 @@ export default function Login() {
     );
   }
 
-  // 🌿 Residents First Page (existing flow)
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-white text-gray-800 px-6">
-      <div className="w-full max-w-md text-center">
-        <AnimatePresence mode="wait">
-          {!started ? (
-            step === 0 ? (
-              // 🌱 Resident Intro
-              <motion.div
-                key="get-started"
-                initial={{ opacity: 0, y: 40 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -40 }}
-                transition={{ duration: 0.5 }}
-                className="flex flex-col items-center"
+  // 🌿 Residents First Page (new modern onboarding design for mobile)
+
+return (
+  <div className="min-h-screen flex items-center justify-center bg-white">
+    <div className="w-full max-w-md h-screen flex flex-col justify-center px-4 sm:px-6">
+      <AnimatePresence mode="wait">
+        {!started ? (
+          // 🌿 Onboarding Slides (Mobile Friendly)
+          <motion.div
+            key={step}
+            initial={{ opacity: 0, y: 60 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -60 }}
+            transition={{ duration: 0.45, ease: "easeInOut" }}
+            className="relative h-full flex flex-col justify-center"
+          >
+            <div className="bg-white py-6 px-5 flex flex-col items-center justify-between h-[90vh] mx-auto w-full relative overflow-hidden">
+              
+              {/* Skip Button */}
+              <button
+                onClick={() => setStarted(true)}
+                className="absolute top-6 right-6 text-gray-500 text-sm font-medium hover:text-gray-700 transition"
               >
-                <div className="mb-6">
-                  <Leaf size={100} className="text-[#d94f4f] drop-shadow-md" />
-                </div>
-                <h1 className="text-3xl font-bold mb-2 text-[#b33b3b]">
-                  Waste Collection Schedule
-                </h1>
-                <p className="text-sm text-gray-600 mb-8">
-                  Keep your barangay clean and organized. Stay updated with your
-                  waste pickup days.
-                </p>
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => setStep(1)}
-                  className="bg-[#d94f4f] text-white font-semibold px-8 py-3 rounded-full shadow-md hover:bg-[#e06060] transition"
+                Skip
+              </button>
+
+              {/* Back Arrow (no circle bg) */}
+              {step > 0 && (
+                <button
+                  onClick={() => setStep(step - 1)}
+                  className="absolute top-6 left-6 hover:opacity-80 transition"
                 >
-                  Let’s Get Started
-                </motion.button>
-              </motion.div>
-            ) : (
-              // 💫 Onboarding Slides
-              <motion.div
-                key={step}
-                initial={{ opacity: 0, y: 40 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -40 }}
-                transition={{ duration: 0.4 }}
-              >
-                <div className="flex flex-col items-center space-y-6">
-                  {onboardingScreens[step - 1].icon}
-                  <h2 className="text-2xl font-bold text-[#b33b3b]">
-                    {onboardingScreens[step - 1].title}
-                  </h2>
-                  <p className="text-gray-600 text-sm max-w-xs">
-                    {onboardingScreens[step - 1].subtitle}
-                  </p>
-
-                  <div className="flex space-x-2 mt-4">
-                    {onboardingScreens.map((_, index) => (
-                      <div
-                        key={index}
-                        className={`w-3 h-3 rounded-full transition ${
-                          index + 1 === step
-                            ? "bg-[#d94f4f]"
-                            : "bg-[#d94f4f]/40"
-                        }`}
-                      />
-                    ))}
-                  </div>
-
-                  <div className="flex justify-between w-full mt-6 text-sm px-4">
-                    <button
-                      onClick={() => setStarted(true)}
-                      className="text-gray-500 hover:underline"
-                    >
-                      Skip
-                    </button>
-                    <button
-                      onClick={() =>
-                        step < onboardingScreens.length
-                          ? setStep(step + 1)
-                          : setStarted(true)
-                      }
-                      className="font-semibold text-[#d94f4f] hover:underline"
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            )
-          ) : (
-            // ✅ Enhanced Login Screen
-            <motion.div
-              key="login"
-              initial={{ opacity: 0, y: 40 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.6 }}
-              className="relative bg-gradient-to-br from-green-50 via-white to-green-100 text-gray-800 rounded-3xl shadow-2xl p-10 w-full max-w-sm mx-auto overflow-hidden"
-            >
-              {/* Decorative abstract circles */}
-              <div className="absolute -top-10 -left-10 w-32 h-32 bg-green-200/40 rounded-full blur-2xl" />
-              <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-[#d94f4f]/30 rounded-full blur-2xl" />
-
-              <div className="relative z-10 flex flex-col items-center">
-                <LogIn size={65} className="text-[#d94f4f] drop-shadow-md mb-4" />
-                <h1 className="text-3xl font-extrabold mb-3 text-[#b33b3b] animate-blink-cursor">
-                  {displayedText}
-                </h1>
-                <p className="text-sm text-gray-600 mb-6 text-center">
-                  Log in to continue exploring your dashboard.
-                </p>
-
-                <form onSubmit={handleLogin} className="w-full">
-                  {error && (
-                    <p className="text-red-500 text-sm mb-3 text-center">
-                      {error}
-                    </p>
-                  )}
-
-                  <div className="space-y-4">
-                    <input
-                      type="email"
-                      placeholder="Email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl bg-white/80 shadow-inner focus:outline-none focus:ring-2 focus:ring-[#d94f4f]/60 placeholder-gray-400 transition"
-                    />
-                    <input
-                      type="password"
-                      placeholder="Password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl bg-white/80 shadow-inner focus:outline-none focus:ring-2 focus:ring-[#d94f4f]/60 placeholder-gray-400 transition"
-                    />
-                  </div>
-
-                  <motion.button
-                    type="submit"
-                    whileHover={{ scale: 1.03 }}
-                    whileTap={{ scale: 0.95 }}
-                    className="w-full mt-6 bg-[#d94f4f] text-white font-semibold py-3 rounded-xl shadow-lg hover:bg-[#e06060] transition"
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="w-6 h-6 text-gray-700"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
                   >
-                    Login
-                  </motion.button>
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M15 19l-7-7 7-7"
+                    />
+                  </svg>
+                </button>
+              )}
 
-                  <p className="mt-6 text-sm text-center text-gray-600">
-                    Don’t have an account?{" "}
-                    <a
-                      href="/register"
-                      className="text-blue-600 font-medium hover:underline"
-                    >
-                      Sign Up
-                    </a>
+              {/* Onboarding Content */}
+              <div className="flex flex-col items-center justify-center flex-grow text-center mt-4 w-full">
+                <motion.div
+                  key={step}
+                  initial={{ opacity: 0, y: 30 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5 }}
+                  className="flex flex-col items-center w-full"
+                >
+                  {/* 🖼️ Image (No Container) */}
+                  <img
+                    src={onboardingScreens[step].image}
+                    alt={onboardingScreens[step].title}
+                    className="w-72 h-72 object-contain mb-6 sm:w-80 sm:h-80"
+                  />
+
+                  {/* Title */}
+                  <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-3 tracking-tight">
+                    {onboardingScreens[step].title}
+                  </h2>
+
+                  {/* Subtitle */}
+                  <p className="text-gray-500 text-base leading-relaxed max-w-xs">
+                    {onboardingScreens[step].subtitle}
                   </p>
-                </form>
+                </motion.div>
               </div>
 
-              <style jsx>{`
-                .animate-blink-cursor {
-                  animation: blink 0.7s infinite;
-                  border-right: 4px solid #b33b3b;
+              {/* Progress Dots */}
+              <div className="flex justify-center items-center space-x-2 mt-4 mb-6">
+                {onboardingScreens.map((_, index) => (
+                  <div
+                    key={index}
+                    className={`transition-all duration-300 rounded-full ${
+                      index === step
+                        ? "w-6 h-3 bg-[#d94f4f]"
+                        : "w-3 h-3 bg-[#d94f4f]/30"
+                    }`}
+                  ></div>
+                ))}
+              </div>
+
+              {/* Next Button */}
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() =>
+                  step < onboardingScreens.length - 1
+                    ? setStep(step + 1)
+                    : setStarted(true)
                 }
-                @keyframes blink {
-                  0%,
-                  100% {
-                    border-color: transparent;
-                  }
-                  50% {
-                    border-color: #b33b3b;
-                  }
+                className="bg-[#d94f4f] rounded-full p-4 shadow-lg hover:bg-[#e35d5d] transition duration-300"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="w-6 h-6 text-white"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M9 5l7 7-7 7"
+                  />
+                </svg>
+              </motion.button>
+            </div>
+          </motion.div>
+        ) : (
+          // ✅ Login Screen (Existing)
+          <motion.div
+            key="login"
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.6 }}
+            className="relative bg-white text-gray-800 rounded-3xl shadow-2xl p-10 w-full max-w-sm mx-auto overflow-hidden"
+          >
+            <div className="relative z-10 flex flex-col items-center">
+              <LogIn size={65} className="text-[#d94f4f] drop-shadow-md mb-4" />
+              <h1 className="text-3xl font-extrabold mb-3 text-[#b33b3b] animate-blink-cursor">
+                {displayedText}
+              </h1>
+              <p className="text-sm text-gray-600 mb-6 text-center">
+                Log in to continue exploring your dashboard.
+              </p>
+
+              {/* Login Form */}
+              <form onSubmit={handleLogin} className="w-full">
+                {error && (
+                  <p className="text-red-500 text-sm mb-3 text-center">
+                    {error}
+                  </p>
+                )}
+                <div className="space-y-4">
+                  <input
+                    type="email"
+                    placeholder="Email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl bg-white/80 shadow-inner focus:outline-none focus:ring-2 focus:ring-[#d94f4f]/60 placeholder-gray-400 transition"
+                  />
+                  <input
+                    type="password"
+                    placeholder="Password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl bg-white/80 shadow-inner focus:outline-none focus:ring-2 focus:ring-[#d94f4f]/60 placeholder-gray-400 transition"
+                  />
+                </div>
+
+                <motion.button
+                  type="submit"
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.95 }}
+                  className="w-full mt-6 bg-[#d94f4f] text-white font-semibold py-3 rounded-xl shadow-lg hover:bg-[#e06060] transition"
+                >
+                  Login
+                </motion.button>
+
+                <p className="mt-6 text-sm text-center text-gray-600">
+                  Don’t have an account?{" "}
+                  <a
+                    href="/register"
+                    className="text-blue-600 font-medium hover:underline"
+                  >
+                    Sign Up
+                  </a>
+                </p>
+              </form>
+            </div>
+
+            {/* Typing Cursor Animation */}
+            <style jsx>{`
+              .animate-blink-cursor {
+                animation: blink 0.7s infinite;
+                border-right: 4px solid #b33b3b;
+              }
+              @keyframes blink {
+                0%, 100% {
+                  border-color: transparent;
                 }
-              `}</style>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+                50% {
+                  border-color: #b33b3b;
+                }
+              }
+            `}</style>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
-  );
+  </div>
+);
 }

@@ -3,13 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "@/supabaseClient";
 import { motion } from "framer-motion";
-import {
-  Recycle,
-  Leaf,
-  Target,
-  AlertTriangle,
-  BookOpen,
-} from "lucide-react";
+import { Recycle, Leaf, Target, AlertTriangle, BookOpen } from "lucide-react";
 
 export default function ScheduleAndEducationSection() {
   const [ongoing, setOngoing] = useState([]);
@@ -67,29 +61,29 @@ export default function ScheduleAndEducationSection() {
     }
   };
 
+  // 🧠 Updated scheduling logic
   const updateSchedules = (data) => {
-    const today = getToday();
     const now = new Date();
+    const today = getToday();
 
-    // Ongoing = today and within time range
+    // Get ongoing schedules (today + current time within range)
     const ongoingSchedules = data.filter((s) => {
-      if (s.date !== today) return false;
       const start = new Date(`${s.date}T${s.start_time}`);
       const end = new Date(`${s.date}T${s.end_time}`);
       return now >= start && now <= end;
     });
 
-    // Upcoming = after now
-    const upcomingSchedules = data
-      .filter((s) => {
-        const start = new Date(`${s.date}T${s.start_time}`);
-        const end = new Date(`${s.date}T${s.end_time}`);
-        return end > now;
-      })
-      .slice(0, 2); // ✅ Only 2 upcoming visible
+    // Get future schedules (after current time)
+    const futureSchedules = data.filter((s) => {
+      const start = new Date(`${s.date}T${s.start_time}`);
+      return start > now;
+    });
+
+    // Always keep only 2 visible upcoming schedules
+    const visibleUpcoming = futureSchedules.slice(0, 2);
 
     setOngoing(ongoingSchedules);
-    setUpcoming(upcomingSchedules);
+    setUpcoming(visibleUpcoming);
   };
 
   const fetchSchedules = async (purok) => {
@@ -129,6 +123,7 @@ export default function ScheduleAndEducationSection() {
     }
   };
 
+  // 🕓 Auto-update logic (real-time + timer)
   useEffect(() => {
     fetchResidentPurok();
     fetchEducation();
@@ -138,6 +133,7 @@ export default function ScheduleAndEducationSection() {
     if (residentPurok) {
       fetchSchedules(residentPurok);
 
+      // Realtime updates for schedule & education
       const scheduleChannel = supabase
         .channel("schedule-changes")
         .on(
@@ -156,10 +152,10 @@ export default function ScheduleAndEducationSection() {
         )
         .subscribe();
 
-      // ⏱️ Re-check every minute so it auto-updates when a schedule time changes
+      // ⏱️ Auto refresh every 30 seconds (re-evaluate schedule time progression)
       const interval = setInterval(() => {
         fetchSchedules(residentPurok);
-      }, 60000);
+      }, 30000);
 
       return () => {
         clearInterval(interval);
@@ -201,6 +197,7 @@ export default function ScheduleAndEducationSection() {
         </h2>
 
         <div className="space-y-4">
+          {/* ✅ Present / Ongoing */}
           {ongoing.length > 0 ? (
             ongoing.map((sched) => (
               <div
@@ -209,9 +206,7 @@ export default function ScheduleAndEducationSection() {
               >
                 <div>
                   <h3 className="font-normal text-green-700">
-                    {sched.recyclable_type ||
-                      sched.waste_type ||
-                      "General Waste"}
+                    {sched.recyclable_type || sched.waste_type || "General Waste"}
                   </h3>
                   <p className="text-sm text-gray-700">
                     {sched.day},{" "}
@@ -229,6 +224,7 @@ export default function ScheduleAndEducationSection() {
             </p>
           )}
 
+          {/* 🔜 Upcoming (2 visible only) */}
           {upcoming.length > 0 &&
             upcoming.map((sched) => (
               <div
@@ -237,9 +233,7 @@ export default function ScheduleAndEducationSection() {
               >
                 <div>
                   <h3 className="font-normal text-black">
-                    {sched.recyclable_type ||
-                      sched.waste_type ||
-                      "General Waste"}
+                    {sched.recyclable_type || sched.waste_type || "General Waste"}
                   </h3>
                   <p className="text-sm text-gray-600">
                     {sched.day},{" "}
