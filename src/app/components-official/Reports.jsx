@@ -1,87 +1,47 @@
 "use client";
 import { useState, useEffect } from "react";
+import Swal from "sweetalert2";
 import { supabase } from "@/supabaseClient";
 import {
   Paperclip,
   MessageSquare,
   CheckCircle,
-  Eye,
   MapPin,
+  Archive,
+  RotateCcw,
 } from "lucide-react";
 
 export default function Reports() {
   const [reports, setReports] = useState([]);
+  const [archived, setArchived] = useState([]);
+  const [showArchived, setShowArchived] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [activeComment, setActiveComment] = useState(null);
   const [processingIds, setProcessingIds] = useState([]);
+  const [respondedIds, setRespondedIds] = useState([]);
   const [user, setUser] = useState(null);
   const [official, setOfficial] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  // ✅ Fetch logged-in user
   useEffect(() => {
     const fetchUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      setUser(user);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) setUser(session.user);
     };
     fetchUser();
-
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => setUser(session?.user ?? null)
-    );
-    return () => listener.subscription.unsubscribe();
   }, []);
 
-  // ✅ Verify official
   useEffect(() => {
     const verifyOfficial = async () => {
       if (!user) return;
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("officials")
         .select("*")
         .eq("user_id", user.id)
         .maybeSingle();
-      if (data) setOfficial(data);
+      if (!error && data) setOfficial(data);
     };
     verifyOfficial();
   }, [user]);
-
-  // ✅ Fetch reports and listen for realtime updates
-  useEffect(() => {
-    fetchReports();
-
-    const channel = supabase
-      .channel("reports-realtime")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "reports" },
-        (payload) => {
-          if (payload.eventType === "INSERT") {
-            setReports((prev) => [
-              { ...normalizeReport(payload.new), draftResponse: "" },
-              ...prev,
-            ]);
-          } else if (payload.eventType === "UPDATE") {
-            setReports((prev) =>
-              prev.map((r) =>
-                r.id === payload.new.id
-                  ? {
-                      ...normalizeReport(payload.new),
-                      draftResponse: r.draftResponse || "",
-                    }
-                  : r
-              )
-            );
-          } else if (payload.eventType === "DELETE") {
-            setReports((prev) => prev.filter((r) => r.id !== payload.old.id));
-          }
-        }
-      )
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
-  }, []);
 
   const normalizeReport = (r) => {
     let file_urls = r.file_urls;
@@ -90,371 +50,415 @@ export default function Reports() {
       try {
         file_urls = JSON.parse(file_urls);
       } catch {
-        file_urls = file_urls ? [file_urls] : [];
+        file_urls = [file_urls];
       }
     }
-    return {
-      ...r,
-      file_urls,
-      status: r.status || "Pending",
-      official_response: r.official_response || "",
-      location: r.location || "No location specified",
-    };
+    return { ...r, file_urls };
   };
 
   const fetchReports = async () => {
     setLoading(true);
-    const { data: reportsData, error } = await supabase
-      .from("reports")
-      .select(
-        "id, title, description, file_urls, created_at, user_id, location, status, official_response"
-      )
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error("❌ Error fetching reports:", error.message);
-      setReports([]);
-      setLoading(false);
-      return;
-    }
-
-    const reportIds = reportsData.map((r) => r.id);
-    const { data: statusData, error: statusError } = await supabase
-      .from("report_status")
-      .select("report_id, status, official_response")
-      .in("report_id", reportIds);
-
-    if (statusError)
-      console.error("❌ Error fetching statuses:", statusError.message);
-
-    const latestStatus = {};
-    statusData?.forEach((s) => (latestStatus[s.report_id] = s));
-
-    const normalized = reportsData.map((r) => {
-      const statusEntry = latestStatus[r.id];
-      return {
-        ...normalizeReport(r),
-        status: statusEntry?.status || r.status || "Pending",
-        official_response:
-          statusEntry?.official_response || r.official_response || "",
-        draftResponse: "",
-      };
-    });
-
-    setReports(normalized);
-    setLoading(false);
-  };
-
-  // ✅ Fix: Update or create notification properly (one per report)
-  const updateOrCreateNotification = async (report, nextStatus, notifMessage) => {
     try {
-      const { data: existing, error: selectErr } = await supabase
-        .from("notifications")
-        .select("id")
-        .eq("report_id", report.id)
-        .eq("user_id", report.user_id)
-        .limit(1);
+      const { data: reportsData, error } = await supabase
+        .from("reports")
+        .select("id, title, description, file_urls, user_id, location, status, official_response, created_at")
+        .order("created_at", { ascending: false });
 
-      if (selectErr) {
-        console.error("❌ Select notification error:", selectErr.message);
+      if (error || !reportsData) {
+        setReports([]);
+        setLoading(false);
         return;
       }
 
-      if (existing && existing.length > 0) {
-        const { error: updateErr } = await supabase
-          .from("notifications")
-          .update({
-            message: notifMessage,
-            status: nextStatus,
-            read: false,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", existing[0].id);
+      const reportIds = reportsData.map((r) => r.id);
 
-        if (updateErr)
-          console.error("❌ Update notification error:", updateErr.message);
-      } else {
-        const { error: insertErr } = await supabase.from("notifications").insert([
-          {
-            report_id: report.id,
-            user_id: report.user_id,
-            message: notifMessage,
-            status: nextStatus,
-            read: false,
-            created_at: new Date().toISOString(),
-          },
-        ]);
-        if (insertErr)
-          console.error("❌ Insert notification error:", insertErr.message);
-      }
+      const { data: statuses } = await supabase
+        .from("report_status")
+        .select("id, report_id, status, official_response, updated_at, location, updated_by")
+        .in("report_id", reportIds)
+        .order("updated_at", { ascending: true });
+
+      const latest = {};
+      (statuses || []).forEach((s) => (latest[s.report_id] = s));
+
+      const enriched = reportsData.map((r) => {
+        const last = latest[r.id];
+        return normalizeReport({
+          ...r,
+          latest_status: last?.status || r.status || "Pending",
+          latest_status_row: last || null,
+        });
+      });
+
+      setReports(enriched);
     } catch (err) {
-      console.error("❌ Notification update failed:", err.message);
+      console.error(err);
+      setReports([]);
+    } finally {
+      setLoading(false);
     }
   };
 
-  // ✅ Updated handleRespond (syncs both tables + single notification)
+  const fetchArchivedReports = async () => {
+    try {
+      const { data } = await supabase
+        .from("archive")
+        .select("*")
+        .order("archived_at", { ascending: false });
+      setArchived((data || []).map(normalizeReport));
+    } catch (err) {
+      console.error(err);
+      setArchived([]);
+    }
+  };
+
+  useEffect(() => {
+    fetchReports();
+    fetchArchivedReports();
+
+    const channel = supabase
+      .channel("realtime-report-status-list")
+      .on("postgres_changes", { event: "*", schema: "public", table: "report_status" }, () => {
+        setRefreshKey((k) => k + 1);
+      })
+      .subscribe();
+
+    const channel2 = supabase
+      .channel("realtime-reports")
+      .on("postgres_changes", { event: "*", schema: "public", table: "reports" }, () => {
+        setRefreshKey((k) => k + 1);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+      supabase.removeChannel(channel2);
+    };
+  }, []);
+
+  useEffect(() => {
+    fetchReports();
+    fetchArchivedReports();
+  }, [refreshKey]);
+
   const handleRespond = async (report, resolve = false) => {
-    if (!report.draftResponse && !resolve) {
-      alert("Please enter a response before sending.");
-      return;
-    }
-    if (!user || !official) {
-      alert("❌ You must be logged in as an official.");
-      return;
-    }
+    const responseText = report.draftResponse || "";
+    const nextStatus = resolve ? "Resolved" : "In Progress";
 
     setProcessingIds((prev) => [...prev, report.id]);
-    const nextStatus = resolve ? "Resolved" : "In Progress";
-    const responseText = report.draftResponse || report.official_response || "";
-
-    // ✅ Optimistic UI update
-    setReports((prev) =>
-      prev.map((r) =>
-        r.id === report.id
-          ? {
-              ...r,
-              status: nextStatus,
-              official_response: responseText,
-              draftResponse: "",
-            }
-          : r
-      )
-    );
 
     try {
-      // ✅ 1. Upsert status into report_status
-      const { data: updated, error } = await supabase
+      const payload = {
+        report_id: report.id,
+        status: nextStatus,
+        official_response: responseText,
+        updated_by: official?.user_id || null,
+        location: report.location || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data: upserted, error: upsertError } = await supabase
         .from("report_status")
-        .upsert(
-          {
-            report_id: report.id,
-            status: nextStatus,
-            official_response: responseText,
-            updated_by: user.id,
-            location: report.location,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "report_id" }
-        )
-        .select("*")
-        .maybeSingle();
+        .upsert(payload, { onConflict: "report_id" })
+        .select();
 
-      if (error) throw error;
+      if (upsertError) throw upsertError;
 
-      // ✅ 2. Update main reports table to reflect latest status & response
-      const { error: updateMainError } = await supabase
+      const { error: updateError } = await supabase
         .from("reports")
         .update({
           status: nextStatus,
           official_response: responseText,
-          updated_at: new Date().toISOString(),
         })
         .eq("id", report.id);
 
-      if (updateMainError)
-        console.error("⚠️ Error updating reports table:", updateMainError.message);
+      if (updateError) throw updateError;
 
-      // ✅ 3. Log activity
-      await supabase.from("activities").insert([
-        {
-          action: resolve ? "Marked report as resolved" : "Responded to report",
-          type: "report_update",
-          created_at: new Date().toISOString(),
-        },
-      ]);
+      Swal.fire({
+        icon: "success",
+        title: resolve ? "Resolved!" : "Response Saved!",
+        text: resolve ? "Report marked as resolved." : "Your response has been saved.",
+        timer: 1600,
+        showConfirmButton: false,
+      });
 
-      // ✅ 4. Handle notification (ensure one per report)
-      if (report.user_id) {
-        const notifMessage = resolve
-          ? `Your report titled "${report.title}" has been marked as resolved: ${updated?.official_response || ""}`
-          : `Official responded to your report titled "${report.title}": ${updated?.official_response || ""}`;
+      if (!resolve) setRespondedIds((prev) => [...prev, report.id]);
 
-        await updateOrCreateNotification(report, nextStatus, notifMessage);
-      }
+      fetchReports();
     } catch (err) {
-      console.error("❌ handleRespond error:", err.message || err);
-      alert("Failed to update report.");
+      console.error(err);
+      Swal.fire({
+        icon: "error",
+        title: "Oops...",
+        text: err.message || "Failed to save response.",
+      });
     } finally {
       setProcessingIds((prev) => prev.filter((id) => id !== report.id));
-      fetchReports();
     }
   };
 
-  // ✅ Archive a report
   const archiveReport = async (report) => {
     try {
-      const { error: insertError } = await supabase.from("archive").insert([
-        {
-          report_id: report.id,
-          title: report.title,
-          description: report.description,
-          status: report.status,
-          file_urls: report.file_urls,
-          official_response: report.official_response,
-          created_at: report.created_at,
-          archived_at: new Date().toISOString(),
-        },
-      ]);
+      const insertData = {
+        report_id: report.id,
+        title: report.title,
+        description: report.description,
+        status: report.latest_status || report.status,
+        file_urls: report.file_urls || [],
+        official_response: report.official_response || "",
+        created_at: report.created_at,
+        archived_at: new Date().toISOString(),
+      };
 
+      const { error: insertError } = await supabase.from("archive").insert([insertData]);
       if (insertError) throw insertError;
 
-      const { error: deleteError } = await supabase
-        .from("reports")
-        .delete()
-        .eq("id", report.id);
-
-      if (deleteError) throw deleteError;
+      await supabase.from("reports").delete().eq("id", report.id);
 
       fetchReports();
+      fetchArchivedReports();
+
+      Swal.fire({
+        icon: "success",
+        title: "Archived!",
+        text: `The report "${report.title}" has been archived successfully.`,
+        showConfirmButton: false,
+        timer: 2000,
+      });
     } catch (error) {
-      console.error("❌ Error archiving report:", error.message);
+      console.error(error);
+      Swal.fire({
+        icon: "error",
+        title: "Oops...",
+        text: "Something went wrong while archiving the report!",
+      });
     }
   };
 
-  if (loading)
-    return <div className="p-6 text-center text-gray-500">Loading reports...</div>;
+  const restoreReport = async (report) => {
+    try {
+      const restoreData = {
+        title: report.title,
+        description: report.description,
+        status: "Pending",
+        file_urls: report.file_urls || [],
+        official_response: report.official_response,
+        location: report.location || "Unknown",
+        created_at: new Date().toISOString(),
+      };
 
-  if (!reports.length)
-    return <div className="p-6 text-center text-gray-500">No reports yet.</div>;
+      const { error: insertError } = await supabase.from("reports").insert([restoreData]);
+      if (insertError) throw insertError;
+
+      await supabase.from("archive").delete().eq("id", report.id);
+
+      fetchReports();
+      fetchArchivedReports();
+
+      Swal.fire({
+        icon: "success",
+        title: "Restored!",
+        text: `The report "${report.title}" has been restored successfully.`,
+        showConfirmButton: false,
+        timer: 2000,
+      });
+    } catch (error) {
+      console.error(error);
+      Swal.fire({
+        icon: "error",
+        title: "Restore Failed",
+        text: "Something went wrong while restoring the report.",
+      });
+    }
+  };
+
+  if (loading) return <div className="p-6 text-center text-gray-500">Loading reports...</div>;
 
   return (
     <div className="p-6 space-y-6">
-      <h2 className="text-2xl font-bold text-gray-800">Citizen Reports</h2>
-
-      {reports.map((report) => (
-        <div
-          key={report.id}
-          className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-200 dark:border-gray-700"
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-800">
+          {showArchived ? "Archived Reports" : "Citizen Reports"}
+        </h2>
+        <button
+          onClick={() => setShowArchived(!showArchived)}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 bg-white shadow-sm hover:bg-gray-50 text-gray-700"
         >
-          <div className="flex items-start justify-between">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                {report.title}
-              </h3>
-              <p className="text-sm text-gray-500 mt-1">
-                Submitted on {new Date(report.created_at).toLocaleString()}
-              </p>
-              <p className="text-sm text-gray-600 flex items-center gap-1 mt-1">
-                <MapPin size={14} className="text-red-500" />
-                {report.location}
-              </p>
-            </div>
-            <span
-              className={`px-3 py-1 rounded-full text-xs font-medium ${
-                report.status === "Pending"
-                  ? "bg-yellow-100 text-yellow-800"
-                  : report.status === "In Progress"
-                  ? "bg-blue-100 text-blue-800"
-                  : "bg-green-100 text-green-800"
-              }`}
-            >
-              {report.status}
-            </span>
-          </div>
-
-          <p className="mt-3 text-sm text-gray-700 dark:text-gray-300">
-            {report.description}
-          </p>
-
-          {report.file_urls?.length > 0 && (
-            <div className="mt-3">
-              <p className="text-sm font-medium text-gray-700 flex items-center gap-1">
-                <Paperclip size={14} /> Attachments:
-              </p>
-              <div className="flex gap-2 mt-2 flex-wrap">
-                {report.file_urls.map((url, idx) => (
-                  <a
-                    key={idx}
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-3 py-1 bg-gray-100 text-gray-600 rounded-lg text-sm hover:underline"
-                  >
-                    Attachment {idx + 1}
-                  </a>
-                ))}
-              </div>
-            </div>
+          {showArchived ? (
+            <>
+              <RotateCcw size={18} className="text-green-600" /> Back
+            </>
+          ) : (
+            <>
+              <Archive size={18} className="text-gray-500" /> Archived
+            </>
           )}
+        </button>
+      </div>
 
-          {report.official_response && (
-            <div className="mt-3 bg-gray-50 border-l-4 border-blue-500 p-3 rounded-lg">
-              <p className="text-sm text-gray-700">
-                <strong>Official response:</strong> {report.official_response}
-              </p>
-            </div>
-          )}
-
-          {/* Action buttons */}
-          <div className="mt-4 flex gap-3 flex-wrap">
-            {report.status === "Pending" && (
-              <button
-                onClick={() =>
-                  setActiveComment(activeComment === report.id ? null : report.id)
-                }
-                className="flex items-center gap-1 px-3 py-2 text-sm rounded-lg bg-blue-500 text-white hover:bg-blue-600"
-              >
-                <MessageSquare size={16} />
-                Comment
-              </button>
-            )}
-
-            {report.status !== "Resolved" && (
-              <button
-                onClick={() => handleRespond(report, true)}
-                disabled={processingIds.includes(report.id)}
-                className="flex items-center gap-1 px-3 py-2 text-sm rounded-lg bg-green-500 text-white hover:bg-green-600 disabled:opacity-50"
-              >
-                <CheckCircle size={16} />
-                {processingIds.includes(report.id)
-                  ? "Processing..."
-                  : "Mark Resolved"}
-              </button>
-            )}
-
-            {/* Archive button */}
-            <button
-              onClick={() => archiveReport(report)}
-              className="flex items-center gap-1 px-3 py-2 text-sm rounded-lg bg-gray-500 text-white hover:bg-gray-600"
-            >
-              <Eye size={16} />
-              Archive
-            </button>
-          </div>
-
-          {/* Comment box */}
-          {activeComment === report.id && (
-            <div className="mt-3">
-              <textarea
-                value={report.draftResponse}
-                onChange={(e) =>
-                  setReports((prev) =>
-                    prev.map((r) =>
-                      r.id === report.id
-                        ? { ...r, draftResponse: e.target.value }
-                        : r
-                    )
-                  )
-                }
-                rows={3}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-                placeholder="Type your comment here..."
-              />
-              <div className="mt-2 flex justify-end">
-                <button
-                  onClick={() => handleRespond(report, false)}
-                  disabled={processingIds.includes(report.id)}
-                  className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+      {!showArchived ? (
+        reports.length === 0 ? (
+          <div className="text-center text-gray-500">No reports found.</div>
+        ) : (
+          reports.map((report) => (
+            <div key={report.id} className="bg-white rounded-xl shadow-md p-6 border border-gray-200">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">{report.title}</h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Submitted: {new Date(report.created_at).toLocaleString()}
+                  </p>
+                  <p className="text-sm text-gray-600 flex items-center gap-1 mt-1">
+                    <MapPin size={14} className="text-red-500" />
+                    {report.location || "No location"}
+                  </p>
+                </div>
+                <span
+                  className={`px-3 py-1 rounded-full text-xs font-medium ${
+                    (report.latest_status || report.status || "pending") === "Pending"
+                      ? "bg-yellow-100 text-yellow-800"
+                      : (report.latest_status || report.status || "pending").toLowerCase() === "in progress"
+                      ? "bg-blue-100 text-blue-800"
+                      : "bg-green-100 text-green-800"
+                  }`}
                 >
-                  {processingIds.includes(report.id)
-                    ? "Sending..."
-                    : "Send Comment"}
+                  {(report.latest_status || report.status || "Pending").toString()}
+                </span>
+              </div>
+
+              <p className="mt-3 text-sm text-gray-700">{report.description}</p>
+
+              {report.file_urls?.length > 0 && (
+                <div className="mt-3">
+                  <p className="text-sm font-medium text-gray-700 flex items-center gap-1">
+                    <Paperclip size={14} /> Attachments:
+                  </p>
+                  <div className="flex gap-2 mt-2 flex-wrap">
+                    {report.file_urls.map((url, idx) => (
+                      <a
+                        key={idx}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1 bg-gray-100 text-gray-600 rounded-lg text-sm hover:underline"
+                      >
+                        Attachment {idx + 1}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {report.official_response && (
+                <div className="mt-3 bg-gray-50 border-l-4 border-blue-500 p-3 rounded-lg">
+                  <p className="text-sm text-gray-700">
+                    <strong>Response:</strong> {report.official_response}
+                  </p>
+                </div>
+              )}
+
+              {official && report.status !== "Resolved" && (
+                <div className="mt-3">
+                  {!respondedIds.includes(report.id) && (
+                    <textarea
+                      className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      placeholder="Type your response here..."
+                      value={report.draftResponse || ""}
+                      onChange={(e) => {
+                        const newVal = e.target.value;
+                        setReports((prev) =>
+                          prev.map((r) => (r.id === report.id ? { ...r, draftResponse: newVal } : r))
+                        );
+                      }}
+                    />
+                  )}
+                  <div className="mt-2 flex gap-2">
+                    {!respondedIds.includes(report.id) && (
+                      <button
+                        onClick={() => handleRespond(report, false)}
+                        disabled={processingIds.includes(report.id)}
+                        className="flex items-center gap-1 px-3 py-2 text-sm rounded-lg bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50"
+                      >
+                        <MessageSquare size={16} /> Respond
+                      </button>
+                    )}
+                    {report.latest_status !== "Resolved" && (
+                      <button
+                        onClick={() => handleRespond(report, true)}
+                        disabled={processingIds.includes(report.id)}
+                        className="flex items-center gap-1 px-3 py-2 text-sm rounded-lg bg-green-500 text-white hover:bg-green-600 disabled:opacity-50"
+                      >
+                        <CheckCircle size={16} /> Mark Resolved
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-4 flex gap-3 flex-wrap">
+                <button
+                  onClick={() => archiveReport(report)}
+                  className="flex items-center gap-1 px-3 py-2 text-sm rounded-lg bg-gray-500 text-white hover:bg-gray-600"
+                >
+                  <Archive size={16} />
+                  Archive
                 </button>
               </div>
             </div>
-          )}
-        </div>
-      ))}
+          ))
+        )
+      ) : archived.length === 0 ? (
+        <div className="text-center text-gray-500">No archived reports.</div>
+      ) : (
+        archived.map((report) => (
+          <div key={report.id} className="bg-white rounded-xl shadow-md p-6 border border-gray-200">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">{report.title}</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  Archived on {new Date(report.archived_at).toLocaleString()}
+                </p>
+              </div>
+              <span className="px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                {report.status}
+              </span>
+            </div>
+
+            <p className="mt-3 text-sm text-gray-700">{report.description}</p>
+
+            {report.file_urls?.length > 0 && (
+              <div className="mt-3">
+                <p className="text-sm font-medium text-gray-700 flex items-center gap-1">
+                  <Paperclip size={14} /> Attachments:
+                </p>
+                <div className="flex gap-2 mt-2 flex-wrap">
+                  {report.file_urls.map((url, idx) => (
+                    <a
+                      key={idx}
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-1 bg-gray-100 text-gray-600 rounded-lg text-sm hover:underline"
+                    >
+                      Attachment {idx + 1}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => restoreReport(report)}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-700 text-white text-sm hover:bg-red-800"
+              >
+                <RotateCcw size={16} />
+                Restore
+              </button>
+            </div>
+          </div>
+        ))
+      )}
     </div>
   );
 }
